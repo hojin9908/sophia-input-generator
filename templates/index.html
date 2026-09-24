@@ -23,14 +23,15 @@
   pre { background:#0f172a; color:#e2e8f0; padding:10px; border-radius:6px; overflow:auto; font-size:12px; }
   .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
   .muted { color:var(--mute); font-size:13px; } .err { color:var(--err); white-space:pre-wrap; }
-  canvas { width:100%; max-width:720px; aspect-ratio: 4/3; border:1px solid var(--line); border-radius:6px; background:#fff; }
+  canvas { width:100%; height:auto; border:1px solid var(--line); border-radius:6px; background:#fff; display:block; }
+  main > section { min-width:0; }
   table { border-collapse:collapse; font-size:13px; } td { padding:3px 10px 3px 0; }
   .legend span { display:inline-block; width:10px; height:10px; margin:0 4px 0 12px; border-radius:2px; }
 </style>
 </head>
 <body>
 <header>
-  <h1>SOPHIA Input Generator</h1>
+  <h1>SOPHIA Input Generator{% if demo %} <span style="font-size:12px;background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:10px;vertical-align:middle">DEMO MODE</span>{% endif %}</h1>
   <p>논문 PDF → 케이스 선택 → geometry spec(편집 가능) → 결정론적 입자 생성 → input.txt · 매뉴얼 BM25 청크 {{ manual_chunks }}개</p>
 </header>
 <main>
@@ -73,7 +74,7 @@
         <p><a id="dl" href="#"><button>input.txt 다운로드</button></a></p>
       </div>
       <div style="flex:1;min-width:300px">
-        <canvas id="cv" width="960" height="720"></canvas>
+        <canvas id="cv" width="1200" height="400"></canvas>
         <div class="legend muted"><span style="background:#2458d6"></span>fluid<span style="background:#475467"></span>boundary<span style="background:#d97706"></span>DEM<span style="background:#16a34a"></span>inlet<span style="background:#dc2626"></span>outlet</div>
       </div>
     </div>
@@ -83,6 +84,8 @@
 </main>
 <script>
 const $ = (id) => document.getElementById(id);
+// pretty JSON with short number/string arrays kept on one line
+const pretty = (o) => JSON.stringify(o, null, 2).replace(/\[\s+([^\[\]{}]*?)\s+\]/g, (m, inner) => "[" + inner.split(/,\s*/).join(", ") + "]");
 let SID = null, CASE = null;
 
 const EXAMPLE = {
@@ -101,7 +104,7 @@ async function api(url, opts) {
 function busy(el, msg) { el.textContent = msg; el.className = "muted"; }
 function fail(el, e) { el.textContent = e.message; el.className = "err"; }
 
-$("btnExample").onclick = () => { $("spec").value = JSON.stringify(EXAMPLE, null, 2); };
+$("btnExample").onclick = () => { $("spec").value = pretty(EXAMPLE); };
 
 $("btnUpload").onclick = async () => {
   const f = $("pdf").files[0];
@@ -133,7 +136,7 @@ $("btnSpec").onclick = async () => {
   try {
     const j = await api("/api/spec", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ session_id: SID, case_id: CASE, notes: $("notes").value }) });
-    $("spec").value = JSON.stringify(j.spec, null, 2);
+    $("spec").value = pretty(j.spec);
     busy($("specStatus"), "완료 — 3단계에서 값을 확인·수정한 뒤 생성하십시오.");
   } catch (e) { fail($("specStatus"), e); }
   $("btnSpec").disabled = false;
@@ -160,19 +163,34 @@ $("btnGen").onclick = async () => {
 };
 
 function draw(pts, dim) {
+  // 2-D: x-y plane ; 3-D: x-z mid-plane slice (server sends the slice)
   const cv = $("cv"), ctx = cv.getContext("2d");
-  ctx.clearRect(0, 0, cv.width, cv.height);
   if (!pts.length) return;
-  // 2-D: x-y ; 3-D: x-z side view is less useful for tanks, so project x-y as well
-  const X = pts.map((p) => p[0]), Y = pts.map((p) => p[1]);
-  const x0 = Math.min(...X), x1 = Math.max(...X), y0 = Math.min(...Y), y1 = Math.max(...Y);
-  const pad = 20, sc = Math.min((cv.width - 2 * pad) / (x1 - x0 || 1), (cv.height - 2 * pad) / (y1 - y0 || 1));
+  const vy = dim === 3 ? 2 : 1;
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const p of pts) { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); y0 = Math.min(y0, p[vy]); y1 = Math.max(y1, p[vy]); }
+  // canvas follows the domain aspect ratio
+  const W = 1200, pad = 28, aspect = (y1 - y0 || 1) / (x1 - x0 || 1);
+  cv.width = W; cv.height = Math.round(Math.min(900, Math.max(260, (W - 2 * pad) * aspect + 2 * pad)));
+  const sc = Math.min((cv.width - 2 * pad) / (x1 - x0 || 1), (cv.height - 2 * pad) / (y1 - y0 || 1));
+  const ox = (cv.width - (x1 - x0) * sc) / 2, oy = (cv.height - (y1 - y0) * sc) / 2;
+  // lattice spacing estimate -> dot size
+  const xs = [...new Set(pts.filter((p) => p[3] != 1001).map((p) => p[0].toFixed(7)))].map(Number).sort((a, b) => a - b);
+  let dp = Infinity; for (let i = 1; i < xs.length; i++) dp = Math.min(dp, xs[i] - xs[i - 1]);
+  const rDot = isFinite(dp) ? Math.max(1.2, 0.42 * dp * sc) : 2;
+  ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, cv.width, cv.height);
   const col = (p) => p[4] == 1 ? "#16a34a" : p[4] == 2 ? "#dc2626" : p[3] == 0 ? "#475467" : p[3] == 1001 ? "#d97706" : "#2458d6";
-  const r = Math.max(1, Math.min(4, sc * 0.004));
-  for (const p of pts) {
-    ctx.fillStyle = col(p);
-    ctx.fillRect(pad + (p[0] - x0) * sc - r / 2, cv.height - pad - (p[1] - y0) * sc - r / 2, r, r);
+  const order = (p) => (p[3] == 1001 ? 2 : p[3] == 0 ? 0 : 1);
+  for (const p of pts.slice().sort((a, b) => order(a) - order(b))) {
+    const isDem = p[3] == 1001;
+    const cx = ox + (p[0] - x0) * sc, cy = cv.height - oy - (p[vy] - y0) * sc;
+    ctx.beginPath();
+    ctx.arc(cx, cy, isDem ? Math.max(rDot, p[5] * sc) : rDot, 0, 2 * Math.PI);
+    ctx.fillStyle = col(p); ctx.globalAlpha = isDem ? 0.9 : 1; ctx.fill();
+    if (isDem) { ctx.globalAlpha = 1; ctx.strokeStyle = "#92400e"; ctx.lineWidth = 1; ctx.stroke(); }
   }
+  ctx.globalAlpha = 1; ctx.fillStyle = "#667085"; ctx.font = "15px system-ui";
+  ctx.fillText(dim === 3 ? "x–z mid-plane slice" : "x–y plane", 10, 20);
 }
 </script>
 </body>
