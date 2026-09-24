@@ -37,7 +37,11 @@ def _load_dotenv(path: str) -> None:
 
 _load_dotenv(os.path.join(BASE_DIR, ".env"))
 
-import llm  # noqa: E402  (needs env loaded first)
+DEMO = os.environ.get("SOPHIA_DEMO", "0").strip() == "1"  # strip: cmd "set X=1 && ..." keeps a space
+if DEMO:  # no API key needed: returns bundled example cases
+    import demo as llm  # noqa: E402
+else:
+    import llm  # noqa: E402  (needs env loaded first)
 import particle_gen  # noqa: E402
 from rag import load_manuals  # noqa: E402
 
@@ -47,6 +51,7 @@ SESSION_TTL = int(os.environ.get("SESSION_TTL_SEC", str(6 * 3600)))
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 40 * 1024 * 1024  # 40 MB PDF limit
+app.json.sort_keys = False  # keep spec keys in the model's / file's order
 
 SESSIONS: dict = {}
 _LOCK = threading.Lock()
@@ -80,7 +85,7 @@ def _json_error(err):
 
 @app.get("/")
 def index():
-    return render_template("index.html", manual_chunks=len(MANUALS.docs))
+    return render_template("index.html", manual_chunks=len(MANUALS.docs), demo=DEMO)
 
 
 @app.get("/healthz")
@@ -160,7 +165,7 @@ def generate():
     return jsonify(
         summary=summary,
         head="".join(head),
-        preview=particle_gen.preview_points(fields),
+        preview=particle_gen.preview_points(fields, int(spec_in.get("dim", 2))),
         dim=int(spec_in.get("dim", 2)),
         download=f"/api/download/{sid}/{name}",
     )

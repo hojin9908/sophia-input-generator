@@ -416,14 +416,28 @@ def build_input_file(spec: Dict, out_path: str) -> Dict:
     return summarize(fields, normalize_spec(spec))
 
 
-def preview_points(fields: Dict[str, np.ndarray], limit: int = 20000) -> List[List[float]]:
-    """Subsampled [x, y, z, p_type, buffer_type] rows for the web preview."""
+def preview_points(fields: Dict[str, np.ndarray], dim: int = 2, limit: int = 20000) -> List[List[float]]:
+    """Subsampled [x, y, z, p_type, buffer_type, rad] rows for the web preview.
+
+    3-D: returns the x-z mid-plane slice (the lattice plane y* closest to the
+    domain centre, plus every DEM sphere that the plane y = y* cuts), so the
+    interior is visible instead of being hidden behind the walls.
+    """
     n = len(fields["x"])
-    step = max(1, n // limit)
-    sel = slice(0, n, step)
+    idx = np.arange(n)
+    if dim == 3 and n:
+        y = fields["y"]
+        y_mid = 0.5 * (y.min() + y.max())
+        lattice = fields["p_type"] != P_TYPE_DEM
+        ys = y[lattice][np.argmin(np.abs(y[lattice] - y_mid))] if lattice.any() else y_mid
+        in_plane = lattice & (np.abs(y - ys) < 1e-9)
+        cut_dem = (~lattice) & (np.abs(y - ys) <= fields["rad"])
+        idx = idx[in_plane | cut_dem]
+    step = max(1, len(idx) // limit)
+    idx = idx[::step]
     return np.column_stack([
-        fields["x"][sel], fields["y"][sel], fields["z"][sel],
-        fields["p_type"][sel], fields["buffer_type"][sel],
+        fields["x"][idx], fields["y"][idx], fields["z"][idx],
+        fields["p_type"][idx], fields["buffer_type"][idx], fields["rad"][idx],
     ]).round(7).tolist()
 
 
