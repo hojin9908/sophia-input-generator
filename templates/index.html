@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SOPHIA Input Generator</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --ink:#1d2330; --mute:#667085; --line:#d9dde5; --acc:#2458d6; --err:#c0392b; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, "Malgun Gothic", sans-serif; background:var(--bg); color:var(--ink); }
+  header { padding:20px 24px; border-bottom:1px solid var(--line); background:var(--card); }
+  header h1 { margin:0; font-size:20px; }
+  header p { margin:4px 0 0; color:var(--mute); font-size:13px; }
+  main { max-width:1100px; margin:0 auto; padding:20px 16px 60px; display:grid; gap:16px; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px 18px; }
+  h2 { font-size:16px; margin:0 0 12px; }
+  button { background:var(--acc); color:#fff; border:0; border-radius:6px; padding:8px 14px; cursor:pointer; font-size:14px; }
+  button:disabled { opacity:.5; cursor:default; }
+  .case { border:1px solid var(--line); border-radius:8px; padding:10px 12px; margin:8px 0; cursor:pointer; }
+  .case.sel { border-color:var(--acc); box-shadow:0 0 0 2px #2458d633; }
+  .case b { font-size:14px; } .case small { color:var(--mute); display:block; margin-top:4px; white-space:pre-wrap; }
+  textarea { width:100%; min-height:320px; font-family:ui-monospace, Consolas, monospace; font-size:12px; border:1px solid var(--line); border-radius:6px; padding:8px; }
+  pre { background:#0f172a; color:#e2e8f0; padding:10px; border-radius:6px; overflow:auto; font-size:12px; }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .muted { color:var(--mute); font-size:13px; } .err { color:var(--err); white-space:pre-wrap; }
+  canvas { width:100%; max-width:720px; aspect-ratio: 4/3; border:1px solid var(--line); border-radius:6px; background:#fff; }
+  table { border-collapse:collapse; font-size:13px; } td { padding:3px 10px 3px 0; }
+  .legend span { display:inline-block; width:10px; height:10px; margin:0 4px 0 12px; border-radius:2px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>SOPHIA Input Generator</h1>
+  <p>논문 PDF → 케이스 선택 → geometry spec(편집 가능) → 결정론적 입자 생성 → input.txt · 매뉴얼 BM25 청크 {{ manual_chunks }}개</p>
+</header>
+<main>
+  <section>
+    <h2>1. 논문 업로드</h2>
+    <div class="row">
+      <input type="file" id="pdf" accept="application/pdf">
+      <button id="btnUpload">분석</button>
+      <span id="upStatus" class="muted"></span>
+    </div>
+    <p class="muted">PDF 없이 spec JSON을 직접 편집해 생성하려면 3단계로 바로 이동하십시오.</p>
+  </section>
+
+  <section id="secCases" hidden>
+    <h2>2. 케이스 선택</h2>
+    <div id="paperInfo" class="muted"></div>
+    <div id="cases"></div>
+    <div class="row" style="margin-top:8px">
+      <input id="notes" placeholder="추가 요청 (예: dp=0.005로, 벽 4층)" style="flex:1;padding:7px;border:1px solid var(--line);border-radius:6px">
+      <button id="btnSpec" disabled>spec 생성</button>
+      <span id="specStatus" class="muted"></span>
+    </div>
+  </section>
+
+  <section>
+    <h2>3. Geometry spec (JSON)</h2>
+    <textarea id="spec"></textarea>
+    <div class="row" style="margin-top:8px">
+      <button id="btnGen">input.txt 생성</button>
+      <button id="btnExample" style="background:#667085">예제 불러오기</button>
+      <span id="genStatus" class="muted"></span>
+    </div>
+  </section>
+
+  <section id="secResult" hidden>
+    <h2>4. 결과</h2>
+    <div class="row" style="align-items:flex-start">
+      <div>
+        <table id="summary"></table>
+        <p><a id="dl" href="#"><button>input.txt 다운로드</button></a></p>
+      </div>
+      <div style="flex:1;min-width:300px">
+        <canvas id="cv" width="960" height="720"></canvas>
+        <div class="legend muted"><span style="background:#2458d6"></span>fluid<span style="background:#475467"></span>boundary<span style="background:#d97706"></span>DEM<span style="background:#16a34a"></span>inlet<span style="background:#dc2626"></span>outlet</div>
+      </div>
+    </div>
+    <p class="muted">파일 앞부분</p>
+    <pre id="head"></pre>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+let SID = null, CASE = null;
+
+const EXAMPLE = {
+  name: "dam_break_2d", dim: 2, dp: 0.01, h_factor: 1.6, gravity: [0, -9.81, 0],
+  fluids: [{ shape: "box", min: [0, 0], max: [0.6, 0.6], rho_ref: 1000, temp: 293.15, hydrostatic: true }],
+  walls: [{ kind: "container", min: [0, 0], max: [1.61, 0.8], layers: 3, open_faces: ["y+"], rho_ref: 1000 }],
+  dem: [], open_boundaries: []
+};
+
+async function api(url, opts) {
+  const r = await fetch(url, opts);
+  const j = await r.json().catch(() => ({ error: r.statusText }));
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+function busy(el, msg) { el.textContent = msg; el.className = "muted"; }
+function fail(el, e) { el.textContent = e.message; el.className = "err"; }
+
+$("btnExample").onclick = () => { $("spec").value = JSON.stringify(EXAMPLE, null, 2); };
+
+$("btnUpload").onclick = async () => {
+  const f = $("pdf").files[0];
+  if (!f) return;
+  const fd = new FormData(); fd.append("pdf", f);
+  busy($("upStatus"), "Claude가 논문을 분석 중입니다… (수십 초 소요)");
+  $("btnUpload").disabled = true;
+  try {
+    const j = await api("/api/upload", { method: "POST", body: fd });
+    SID = j.session_id;
+    $("paperInfo").textContent = `${j.paper_title || ""} — ${j.summary || ""}`;
+    const box = $("cases"); box.innerHTML = "";
+    (j.cases || []).forEach((c) => {
+      const d = document.createElement("div"); d.className = "case";
+      d.innerHTML = `<b>${c.name}</b> <span class="muted">[${c.id} · ${c.dim}-D · ${c.kind || ""}]</span>
+        <small>형상: ${c.geometry}\n조건: ${c.parameters}\n출처: ${c.source_location || "-"}\nSOPHIA 적용성: ${c.sophia_feasibility || "-"}</small>`;
+      d.onclick = () => { document.querySelectorAll(".case").forEach((x) => x.classList.remove("sel")); d.classList.add("sel"); CASE = c.id; $("btnSpec").disabled = false; };
+      box.appendChild(d);
+    });
+    $("secCases").hidden = false;
+    busy($("upStatus"), `${(j.cases || []).length}개 케이스를 찾았습니다.`);
+  } catch (e) { fail($("upStatus"), e); }
+  $("btnUpload").disabled = false;
+};
+
+$("btnSpec").onclick = async () => {
+  busy($("specStatus"), "spec 추출 중…");
+  $("btnSpec").disabled = true;
+  try {
+    const j = await api("/api/spec", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: SID, case_id: CASE, notes: $("notes").value }) });
+    $("spec").value = JSON.stringify(j.spec, null, 2);
+    busy($("specStatus"), "완료 — 3단계에서 값을 확인·수정한 뒤 생성하십시오.");
+  } catch (e) { fail($("specStatus"), e); }
+  $("btnSpec").disabled = false;
+};
+
+$("btnGen").onclick = async () => {
+  let spec;
+  try { spec = JSON.parse($("spec").value); } catch (e) { return fail($("genStatus"), new Error("JSON 파싱 오류: " + e.message)); }
+  busy($("genStatus"), "입자 생성 중…");
+  try {
+    const j = await api("/api/generate", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: SID, case_id: CASE, spec }) });
+    const s = j.summary;
+    $("summary").innerHTML = [
+      ["총 입자", s.total], ["fluid", s.fluid], ["boundary", s.boundary], ["DEM", s.dem],
+      ["buffer inlet", s.buffer_inlet], ["buffer outlet", s.buffer_outlet],
+      ["컬럼", s.columns.join(", ")], ["bbox min", JSON.stringify(s.bbox_min)], ["bbox max", JSON.stringify(s.bbox_max)],
+    ].map(([k, v]) => `<tr><td class="muted">${k}</td><td>${v}</td></tr>`).join("");
+    $("dl").href = j.download; $("head").textContent = j.head;
+    draw(j.preview, j.dim);
+    $("secResult").hidden = false;
+    busy($("genStatus"), "완료");
+  } catch (e) { fail($("genStatus"), e); }
+};
+
+function draw(pts, dim) {
+  const cv = $("cv"), ctx = cv.getContext("2d");
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  if (!pts.length) return;
+  // 2-D: x-y ; 3-D: x-z side view is less useful for tanks, so project x-y as well
+  const X = pts.map((p) => p[0]), Y = pts.map((p) => p[1]);
+  const x0 = Math.min(...X), x1 = Math.max(...X), y0 = Math.min(...Y), y1 = Math.max(...Y);
+  const pad = 20, sc = Math.min((cv.width - 2 * pad) / (x1 - x0 || 1), (cv.height - 2 * pad) / (y1 - y0 || 1));
+  const col = (p) => p[4] == 1 ? "#16a34a" : p[4] == 2 ? "#dc2626" : p[3] == 0 ? "#475467" : p[3] == 1001 ? "#d97706" : "#2458d6";
+  const r = Math.max(1, Math.min(4, sc * 0.004));
+  for (const p of pts) {
+    ctx.fillStyle = col(p);
+    ctx.fillRect(pad + (p[0] - x0) * sc - r / 2, cv.height - pad - (p[1] - y0) * sc - r / 2, r, r);
+  }
+}
+</script>
+</body>
+</html>
