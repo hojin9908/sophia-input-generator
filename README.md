@@ -98,12 +98,12 @@ flowchart LR
 
 | 항목 | 식 | 예시 |
 |---|---|---|
-| 격자 (셀 중심) | $x_i = x_{min} + (i + \tfrac12)\,d_p$ | $d_p=0.01$ → 첫 입자 $x=0.005$ m |
-| 질량 | $m = \rho_{ref}\,d_p^3$ | $1000 \times 0.01^3 = 10^{-3}$ kg |
-| 스무딩 길이 | $h = 1.6\,d_p$ | $d_p=0.01$ → $h = 0.016$ m |
-| 정수압 (옵션) | $p = \rho_{ref}\,\lvert g\rvert\,(y_s - y)$ | 수심 0.6 m, $y=0.005$ → $p \approx 5837$ Pa |
+| 격자 (셀 중심) | $x_i = x_{min} + (i + \tfrac12) d_p$ | $d_p=0.01$ → 첫 입자 $x=0.005$ m |
+| 질량 | $m = \rho_{ref} d_p^3$ | $1000 \times 0.01^3 = 10^{-3}$ kg |
+| 스무딩 길이 | $h = 1.6 d_p$ | $d_p=0.01$ → $h = 0.016$ m |
+| 정수압 (옵션) | $p = \rho_{ref} \lvert g\rvert (y_s - y)$ | 수심 0.6 m, $y=0.005$ → $p \approx 5837$ Pa |
 | DEM 질량 | $m = \rho_s \tfrac43 \pi r^3$ | $r=4$ mm, $\rho_s=2500$ → $6.70\times10^{-4}$ kg |
-| Open boundary | $x = x_b + n\,(k+\tfrac12)\,d_p,\; k=0..3$ | buffer 4층 (ESLAB OpenBC, Tafuni et al. 2018) |
+| Open boundary | $x = x_b + n(k+\tfrac12) d_p$, $k=0,\dots,3$ | buffer 4층 (ESLAB OpenBC, Tafuni et al. 2018) |
 
 ---
 
@@ -251,5 +251,5 @@ python -m pytest -q
 
 - open boundary buffer 입자의 `p_type`은 기본 1(fluid)이며, spec의 `p_type`으로 바꿀 수 있습니다.
 - DEM `ri`는 기본값이 반지름과 같고, `dem_idx`는 0부터 부여합니다(`dem_idx_start`로 변경 가능).
-- 2-D에서도 연구실 규칙에 따라 $m=\rho_{ref}\,d_p^3$을 사용합니다.
+- 2-D에서도 연구실 규칙에 따라 $m=\rho_{ref} d_p^3$을 사용합니다.
 - DEM 구역 안의 SPH 유체 입자는 기본적으로 제거합니다(`exclude_dem: false`로 유지 가능).
