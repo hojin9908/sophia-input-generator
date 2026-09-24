@@ -43,3 +43,13 @@ def test_unknown_session_and_bad_spec(tmp_path, monkeypatch):
     r = c.post("/api/generate", json={"spec": {"dim": 2, "dp": -1}})
     assert r.status_code == 400
     assert c.get("/").status_code == 200
+
+
+def test_demo_module_matches_examples():
+    import demo
+    import particle_gen as pg
+
+    rep = demo.analyze_paper(b"")
+    for case in rep["cases"]:
+        spec = demo.build_spec(b"", case)
+        assert pg.generate(spec)["x"].size > 0
