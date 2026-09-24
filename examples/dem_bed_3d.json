@@ -1,0 +1,15 @@
+{
+  "name": "dem_bed_3d",
+  "dim": 3,
+  "dp": 0.004,
+  "fluids": [
+    {"shape": "box", "min": [0, 0, 0], "max": [0.08, 0.08, 0.12], "rho_ref": 1000, "temp": 300, "hydrostatic": true, "up_axis": "z"}
+  ],
+  "gravity": [0, 0, -9.81],
+  "walls": [
+    {"kind": "container", "min": [0, 0, 0], "max": [0.08, 0.08, 0.14], "layers": 3, "open_faces": ["z+"]}
+  ],
+  "dem": [
+    {"region": {"shape": "box", "min": [0, 0, 0], "max": [0.08, 0.08, 0.04]}, "radius": 0.004, "rho": 2500, "arrangement": "cubic", "temp": 350, "vol_power": 1.0e6, "jitter": 0.05, "seed": 1}
+  ]
+}

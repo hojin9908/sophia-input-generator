@@ -1,0 +1,16 @@
+{
+  "name": "channel_openbc_2d",
+  "dim": 2,
+  "dp": 0.005,
+  "fluids": [
+    {"shape": "box", "min": [0, 0], "max": [0.5, 0.1], "rho_ref": 1000, "velocity": [0.1, 0]}
+  ],
+  "walls": [
+    {"kind": "container", "min": [0, 0], "max": [0.5, 0.1], "layers": 3, "open_faces": ["x-", "x+"]},
+    {"kind": "solid", "shape": "cylinder", "axis": "z", "center": [0.2, 0.05], "radius": 0.015, "layers": 3}
+  ],
+  "open_boundaries": [
+    {"type": "inlet",  "axis": "x", "position": 0.0, "outward": -1, "span_min": [0, 0], "span_max": [0, 0.1], "layers": 4, "velocity": [0.1, 0]},
+    {"type": "outlet", "axis": "x", "position": 0.5, "outward": 1,  "span_min": [0, 0], "span_max": [0, 0.1], "layers": 4}
+  ]
+}
