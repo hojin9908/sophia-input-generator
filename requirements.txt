@@ -1,0 +1,6 @@
+flask>=3.0
+anthropic>=0.40
+numpy>=1.26
+pypdf>=4.0
+gunicorn>=22.0; platform_system != "Windows"
+pytest>=8.0

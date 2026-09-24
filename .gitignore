@@ -1,0 +1,19 @@
+# secrets
+.env
+# generated particle files
+outputs/
+*.vtk
+# lab-internal manuals (not public)
+manuals/*
+!manuals/README.md
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+# logs / os
+logs/
+*.log
+.DS_Store
+Thumbs.db
